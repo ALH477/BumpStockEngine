@@ -1,0 +1,17 @@
+{
+  "transport": "gRPC",
+  "host": "0.0.0.0",
+  "port": 8452,
+  "mode": "auto",
+  "node_id": "recoil_node",
+  "peers": [],
+  "group_rtt_threshold": 50,
+  "plugins": {
+    "transport": "librecoil_transport.so"
+  },
+  "logging": {
+    "level": "info",
+    "file": "logs/dcf_network.log",
+    "metrics_interval": 5000
+  }
+}
