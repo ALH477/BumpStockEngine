@@ -1,10 +1,15 @@
 cmake_minimum_required(VERSION 3.15)
 
-# Find required packages
+# Find dependencies
 find_package(Protobuf REQUIRED)
 find_package(gRPC REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(Threads REQUIRED)
+find_package(spdlog REQUIRED)
+find_package(Boost REQUIRED COMPONENTS lockfree)
+find_package(asio REQUIRED)  // For transport
 
+# Net sources
 set(netSources
     Protocol/BaseNetProtocol.cpp
     Protocol/NetProtocol.cpp
@@ -12,43 +17,46 @@ set(netSources
     System/Net/DCFUtils.cpp
 )
 
+# Build net library
 add_library(net STATIC ${netSources})
 target_link_libraries(net
     PRIVATE
         dcf_sdk
-        ${PROTOBUF_LIBRARIES}
-        ${GRPC_LIBRARIES}
+        protobuf::libprotobuf
+        gRPC::grpc++
         nlohmann_json::nlohmann_json
+        spdlog::spdlog
+        Boost::lockfree
         Threads::Threads
+        asio::asio
 )
 
 target_compile_features(net PRIVATE cxx_std_17)
 target_compile_options(net PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra -Werror>
-    $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra -Werror>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX>
+    $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra -Werror -O3 -march=native -flto>
+    $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra -Werror -O3 -march=native -flto>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /O2 /GL>
 )
 
-# Build DCF transport plugin
-add_library(recoil_transport MODULE
-    System/Net/RecoilTransport.cpp
-)
-
-target_link_libraries(recoil_transport
+# Build transport plugin
+add_library(bumpstock_transport MODULE System/Net/BumpStockTransport.cpp)
+target_link_libraries(bumpstock_transport
     PRIVATE
         dcf_sdk
+        asio::asio
         Threads::Threads
+        Boost::lockfree
 )
 
-target_compile_features(recoil_transport PRIVATE cxx_std_17)
-target_compile_options(recoil_transport PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra -Werror -fPIC>
-    $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra -Werror -fPIC>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX>
+target_compile_features(bumpstock_transport PRIVATE cxx_std_17)
+target_compile_options(bumpstock_transport PRIVATE
+    $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra -Werror -fPIC -O3 -march=native -flto>
+    $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra -Werror -fPIC -O3 -march=native -flto>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /O2 /GL>
 )
 
-# Install targets
-install(TARGETS net recoil_transport
+# Install
+install(TARGETS net bumpstock_transport
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin
