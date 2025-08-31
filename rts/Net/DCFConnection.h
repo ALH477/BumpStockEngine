@@ -7,6 +7,10 @@
 #include <deque>
 #include <mutex>
 #include <atomic>
+#include <system_error>
+#include <thread>
+#include <vector>
+#include <boost/lockfree/spsc_queue.hpp>  // Lock-free queue
 
 #include "Connection.h"
 #include "RawPacket.h"
@@ -19,11 +23,9 @@ public:
     explicit DCFConnection(const std::string& configPath = "config/dcf_network.json");
     ~DCFConnection();
 
-    // Deleted copy constructor and assignment operator
     DCFConnection(const DCFConnection&) = delete;
     DCFConnection& operator=(const DCFConnection&) = delete;
 
-    // CConnection interface implementation
     void SendData(std::shared_ptr<const RawPacket> data) override;
     bool HasIncomingData() const override;
     std::shared_ptr<const RawPacket> Peek(unsigned ahead) const override;
@@ -54,21 +56,28 @@ private:
     };
 
     std::unique_ptr<DCFClient, void(*)(DCFClient*)> client;
-    DCFRedundancy* redundancy;  // Owned by client
-    mutable std::mutex msgQueueMutex;
-    std::deque<std::shared_ptr<const RawPacket>> msgQueue;
+    DCFRedundancy* redundancy;
+    boost::lockfree::spsc_queue<std::shared_ptr<const RawPacket>> msgQueue{1024};
     std::atomic<bool> initialized{false};
     std::atomic<bool> muted{true};
     std::atomic<int> lossFactor{0};
     mutable std::mutex metricsMutex;
     Metrics metrics;
-    
+    double rttThreshold{50.0};
+
+    std::vector<std::thread> updateThreads;
+    static constexpr int NUM_UPDATE_THREADS = 4;  // Multi-threading for update
+
     void HandleIncomingMessage(const char* data, size_t length);
     void ProcessMetrics();
     void UpdateMetrics(const cJSON* metricsJson);
     bool ValidateConfiguration(const std::string& configPath);
     void InitializeClient(const std::string& configPath);
     void LogMetrics() const;
+    std::error_code SendWithRetry(const RawPacket& data, int maxRetries = 3);
+    void TriggerFailoverIfNeeded();
+    bool IsInRTTGroup(double rtt) const { return rtt < rttThreshold; }
+    void UpdateThreadLoop();  // Worker for multi-threading
 
     static void ClientDeleter(DCFClient* client) {
         if (client) {
